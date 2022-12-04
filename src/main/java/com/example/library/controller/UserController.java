@@ -20,7 +20,6 @@ import java.util.Optional;
 @RequestMapping("/api/users")
 public class UserController {
     private static final Logger logger = LoggerFactory.getLogger(UserController.class);
-
     private final UserService userService;
     private final ModelMapper modelMapper;
 
@@ -64,7 +63,7 @@ public class UserController {
         return convertToDto(userService.updateUser(convertToEntityCreate(userDetails), user));
     }
 
-    @GetMapping("/multi")
+    @GetMapping("/filter")
     public List<User> filterUsers(@PathParam(value = "firstName") String firstName,
                                 @PathParam(value = "lastName") String lastName,
                                 @PathParam(value = "birthNumber") String birthNumber){
