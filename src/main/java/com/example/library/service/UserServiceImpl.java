@@ -2,8 +2,10 @@ package com.example.library.service;
 
 import com.example.library.exception.ApiRequestException;
 import com.example.library.model.Book;
+import com.example.library.model.Borrowed;
 import com.example.library.model.Role;
 import com.example.library.model.User;
+import com.example.library.repository.BorrowedRepository;
 import com.example.library.repository.UserRepository;
 import com.example.library.service.interfaces.BookService;
 import com.example.library.service.interfaces.UserService;
@@ -18,6 +20,7 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.*;
 
 
@@ -30,11 +33,14 @@ public class UserServiceImpl implements UserService {
 
     private final BookService bookService;
 
+    private final BorrowedRepository borrowedRepository;
+
     private final MongoTemplate mongoTemplate;
 
-    public UserServiceImpl(@Lazy UserRepository repository, @Lazy BookService bookService, MongoTemplate mongoTemplate){
+    public UserServiceImpl(@Lazy UserRepository repository, @Lazy BookService bookService, BorrowedRepository borrowedRepository, MongoTemplate mongoTemplate){
         this.repository = repository;
         this.bookService = bookService;
+        this.borrowedRepository = borrowedRepository;
         this.mongoTemplate = mongoTemplate;
     }
 
@@ -103,7 +109,6 @@ public class UserServiceImpl implements UserService {
         Set<String> newBooks = new HashSet<>();
         Set<String> oldBooks = new HashSet<>();
 
-
         userDetails.getActiveBooks().forEach(b -> {
             Book book = bookService.findBookById(b.getId());
 
@@ -133,7 +138,6 @@ public class UserServiceImpl implements UserService {
                 int newNumberOfBooks = old.getActiveBooks().size();
                 old.setNumberOfBooks(newNumberOfBooks);
 
-                //old.addBook( bookService.findBookById(book.getId()));
                 Book newBook = bookService.findBookById(book.getId());
                 newBooks.add(newBook.getId());
 
@@ -148,6 +152,8 @@ public class UserServiceImpl implements UserService {
             if(!oldBooks.contains(i.getId())){
                 i.setCopy(i.getCopy() + 1);
                 bookService.saveBook(i);
+                Borrowed borrowed = borrowedRepository.findByUserIdAndBookId(old.getId(), i.getId());
+                borrowedRepository.deleteById(borrowed.getId());
             }
         });
 
@@ -162,6 +168,10 @@ public class UserServiceImpl implements UserService {
             Book newBook = bookService.findBookById(newB);
             old.addBook(newBook);
             old.getHistoryBooks().add(newBook);
+
+            LocalDate now = LocalDate.now();
+            Borrowed borrowed = new Borrowed(old.getId(), newBook.getId(), now.plusDays(6L));
+            borrowedRepository.insert(borrowed);
         });
 
         try {

@@ -44,14 +44,14 @@ public class User {
 
     private int numberOfBooks;
 
-    @OneToMany(
+    @ManyToMany(
             mappedBy = "user",
             cascade = {CascadeType.PERSIST, CascadeType.REMOVE},
             fetch = FetchType.LAZY
     )
     private Set<Book> activeBooks = new HashSet<>();
 
-    @OneToMany(
+    @ManyToMany(
             mappedBy = "user",
             cascade = {CascadeType.PERSIST, CascadeType.REMOVE},
             fetch = FetchType.LAZY

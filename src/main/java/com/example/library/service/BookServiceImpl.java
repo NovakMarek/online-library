@@ -3,8 +3,10 @@ package com.example.library.service;
 import com.example.library.controller.UserController;
 import com.example.library.exception.ApiRequestException;
 import com.example.library.model.Book;
+import com.example.library.model.Borrowed;
 import com.example.library.model.User;
 import com.example.library.repository.BookRepository;
+import com.example.library.repository.BorrowedRepository;
 import com.example.library.repository.UserRepository;
 import com.example.library.service.interfaces.BookService;
 import com.example.library.service.interfaces.UserService;
@@ -23,7 +25,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.StreamSupport;
 
 @Service
@@ -35,10 +36,11 @@ public class BookServiceImpl implements BookService {
     private final BookRepository repository;
     private final UserService userService;
     private final UserRepository userRepository;
-
+    private final BorrowedRepository borrowedRepository;
     private final MongoTemplate mongoTemplate;
 
-    public BookServiceImpl(@Lazy BookRepository repository, @Lazy UserService userService, UserRepository userRepository, MongoTemplate mongoTemplate){this.repository = repository;  this.userService = userService; this.userRepository = userRepository;
+    public BookServiceImpl(@Lazy BookRepository repository, @Lazy UserService userService, UserRepository userRepository, BorrowedRepository borrowedRepository, MongoTemplate mongoTemplate){this.repository = repository;  this.userService = userService; this.userRepository = userRepository;
+        this.borrowedRepository = borrowedRepository;
         this.mongoTemplate = mongoTemplate;
     }
 
@@ -142,6 +144,11 @@ public class BookServiceImpl implements BookService {
 
         user.getActiveBooks().add(book);
         user.getHistoryBooks().add(book);
+
+        LocalDate now = LocalDate.now();
+        Borrowed borrowed = new Borrowed(user.getId(), book.getId(), now.plusDays(6L));
+        borrowedRepository.insert(borrowed);
+
         logger.info("User " + user.getUsername() + " borrowed book.");
 
         return userService.save(user);
@@ -163,6 +170,9 @@ public class BookServiceImpl implements BookService {
 
         int newNumberOfBooks = user.getNumberOfBooks() - 1;
         user.setNumberOfBooks(newNumberOfBooks);
+
+        Borrowed borrowed = borrowedRepository.findByUserIdAndBookId(user.getId(), book.getId());
+        borrowedRepository.deleteById(borrowed.getId());
 
         logger.info("User " + user.getUsername() + " returned book.");
 
@@ -192,18 +202,44 @@ public class BookServiceImpl implements BookService {
         return books;
     }
 
+
     @Scheduled(cron = "0 */1 * * * *")
     public void checkExpireDate() {
-        Iterable<Book> books = repository.findAll();
+        Iterable<Borrowed> b = borrowedRepository.findAll();
 
         LocalDate now = LocalDate.now();
 
-        StreamSupport.stream(books.spliterator(), false)
+        StreamSupport.stream(b.spliterator(), false)
                 .forEach(x -> {
-                    if (now.isEqual(x.getExpire())) {
-                        logger.info("Deleting expired book with id" + x.getId());
+                    if (now.isAfter(x.getExpire())) {
+                        autoReturnOfBook(x.getUserId(), x.getBookId());
+                        logger.info("Returning expired book with id " + repository.findById(x.getBookId()));
                     }
                 });
+    }
+
+    private User autoReturnOfBook(String userId, String bookId){
+        Book book = findBookById(bookId);
+
+        User user = userService.findUserById(userId);
+
+        user.getActiveBooks().remove(book);
+
+        Long numberOfCopies = book.getCopy() + 1;
+
+        book.setCopy(numberOfCopies);
+
+        repository.save(book);
+
+        int newNumberOfBooks = user.getNumberOfBooks() - 1;
+        user.setNumberOfBooks(newNumberOfBooks);
+
+        Borrowed borrowed = borrowedRepository.findByUserIdAndBookId(user.getId(), book.getId());
+        borrowedRepository.deleteById(borrowed.getId());
+
+        logger.info("Book was automatically returned from user: " + user.getUsername());
+
+        return userService.save(user);
     }
 
 }
